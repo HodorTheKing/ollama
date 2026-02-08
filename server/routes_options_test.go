@@ -8,69 +8,13 @@ func TestModelOptionsNumCtxPriority(t *testing.T) {
 	tests := []struct {
 		name           string
 		envContextLen  string // empty means not set (uses 0 sentinel)
-		defaultNumCtx  int    // VRAM-based default
+		defaultNumCtx  int    // server default
 		modelNumCtx    int    // 0 means not set in model
 		requestNumCtx  int    // 0 means not set in request
 		expectedNumCtx int
 	}{
 		{
-			name:           "vram default when nothing else set",
-			envContextLen:  "",
-			defaultNumCtx:  32768,
-			modelNumCtx:    0,
-			requestNumCtx:  0,
-			expectedNumCtx: 32768,
-		},
-		{
-			name:           "env var overrides vram default",
-			envContextLen:  "8192",
-			defaultNumCtx:  32768,
-			modelNumCtx:    0,
-			requestNumCtx:  0,
-			expectedNumCtx: 8192,
-		},
-		{
-			name:           "model overrides vram default",
-			envContextLen:  "",
-			defaultNumCtx:  32768,
-			modelNumCtx:    16384,
-			requestNumCtx:  0,
-			expectedNumCtx: 16384,
-		},
-		{
-			name:           "model overrides env var",
-			envContextLen:  "8192",
-			defaultNumCtx:  32768,
-			modelNumCtx:    16384,
-			requestNumCtx:  0,
-			expectedNumCtx: 16384,
-		},
-		{
-			name:           "request overrides everything",
-			envContextLen:  "8192",
-			defaultNumCtx:  32768,
-			modelNumCtx:    16384,
-			requestNumCtx:  4096,
-			expectedNumCtx: 4096,
-		},
-		{
-			name:           "request overrides vram default",
-			envContextLen:  "",
-			defaultNumCtx:  32768,
-			modelNumCtx:    0,
-			requestNumCtx:  4096,
-			expectedNumCtx: 4096,
-		},
-		{
-			name:           "request overrides model",
-			envContextLen:  "",
-			defaultNumCtx:  32768,
-			modelNumCtx:    16384,
-			requestNumCtx:  4096,
-			expectedNumCtx: 4096,
-		},
-		{
-			name:           "low vram tier default",
+			name:           "default when nothing else set",
 			envContextLen:  "",
 			defaultNumCtx:  4096,
 			modelNumCtx:    0,
@@ -78,12 +22,52 @@ func TestModelOptionsNumCtxPriority(t *testing.T) {
 			expectedNumCtx: 4096,
 		},
 		{
-			name:           "high vram tier default",
-			envContextLen:  "",
-			defaultNumCtx:  262144,
+			name:           "env var overrides default",
+			envContextLen:  "8192",
+			defaultNumCtx:  4096,
 			modelNumCtx:    0,
 			requestNumCtx:  0,
-			expectedNumCtx: 262144,
+			expectedNumCtx: 8192,
+		},
+		{
+			name:           "model overrides default",
+			envContextLen:  "",
+			defaultNumCtx:  4096,
+			modelNumCtx:    16384,
+			requestNumCtx:  0,
+			expectedNumCtx: 16384,
+		},
+		{
+			name:           "model overrides env var",
+			envContextLen:  "8192",
+			defaultNumCtx:  4096,
+			modelNumCtx:    16384,
+			requestNumCtx:  0,
+			expectedNumCtx: 16384,
+		},
+		{
+			name:           "request overrides everything",
+			envContextLen:  "8192",
+			defaultNumCtx:  4096,
+			modelNumCtx:    16384,
+			requestNumCtx:  4096,
+			expectedNumCtx: 4096,
+		},
+		{
+			name:           "request overrides default",
+			envContextLen:  "",
+			defaultNumCtx:  4096,
+			modelNumCtx:    0,
+			requestNumCtx:  4096,
+			expectedNumCtx: 4096,
+		},
+		{
+			name:           "request overrides model",
+			envContextLen:  "",
+			defaultNumCtx:  4096,
+			modelNumCtx:    16384,
+			requestNumCtx:  4096,
+			expectedNumCtx: 4096,
 		},
 	}
 
@@ -94,7 +78,7 @@ func TestModelOptionsNumCtxPriority(t *testing.T) {
 				t.Setenv("OLLAMA_CONTEXT_LENGTH", tt.envContextLen)
 			}
 
-			// Create server with VRAM-based default
+			// Create server with default context length
 			s := &Server{
 				defaultNumCtx: tt.defaultNumCtx,
 			}

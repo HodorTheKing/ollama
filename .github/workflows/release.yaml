@@ -28,15 +28,13 @@ jobs:
 
   windows-depends:
     needs: [setup-environment]
+    runs-on: windows-2022
+    environment: release
     strategy:
       matrix:
-        os: [windows]
-        arch: [amd64]
         preset: ["CPU"]
         include:
-          - os: windows
-            arch: amd64
-            preset: "CUDA 12"
+          - preset: "CUDA 12"
             install: https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_571.96_windows.exe
             cuda-components:
               - '"cudart"'
@@ -45,9 +43,7 @@ jobs:
               - '"cublas_dev"'
             cuda-version: "12.8"
             flags: ""
-          - os: windows
-            arch: amd64
-            preset: "CUDA 13"
+          - preset: "CUDA 13"
             install: https://developer.download.nvidia.com/compute/cuda/13.0.0/local_installers/cuda_13.0.0_windows.exe
             cuda-components:
               - '"cudart"'
@@ -59,21 +55,13 @@ jobs:
               - '"nvptxcompiler"'
             cuda-version: "13.0"
             flags: ""
-          - os: windows
-            arch: amd64
-            preset: "ROCm 6"
+          - preset: "ROCm 6"
             install: https://download.amd.com/developer/eula/rocm-hub/AMD-Software-PRO-Edition-24.Q4-WinSvr2022-For-HIP.exe
             rocm-version: "6.2"
             flags: '-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_FLAGS="-parallel-jobs=4 -Wno-ignored-attributes -Wno-deprecated-pragma" -DCMAKE_CXX_FLAGS="-parallel-jobs=4 -Wno-ignored-attributes -Wno-deprecated-pragma"'
-            runner_dir: "rocm"
-          - os: windows
-            arch: amd64
-            preset: Vulkan
+          - preset: "Vulkan"
             install: https://sdk.lunarg.com/sdk/download/1.4.321.1/windows/vulkansdk-windows-X64-1.4.321.1.exe
             flags: ""
-            runner_dir: "vulkan"
-    runs-on: windows-2022
-    environment: release
     env:
       GOFLAGS: ${{ needs.setup-environment.outputs.GOFLAGS }}
     steps:
@@ -81,7 +69,8 @@ jobs:
         run: |
           choco install -y --no-progress ccache ninja
           ccache -o cache_dir=${{ github.workspace }}\.ccache
-      - if: startsWith(matrix.preset, 'CUDA ') || startsWith(matrix.preset, 'ROCm ') || startsWith(matrix.preset, 'Vulkan')
+
+      - if: startsWith(matrix.preset, 'CUDA ') || startsWith(matrix.preset, 'ROCm ') || matrix.preset == 'Vulkan'
         id: cache-install
         uses: actions/cache/restore@v4
         with:
@@ -90,6 +79,7 @@ jobs:
             C:\Program Files\AMD\ROCm
             C:\VulkanSDK
           key: ${{ matrix.install }}
+
       - if: startsWith(matrix.preset, 'CUDA ')
         name: Install CUDA ${{ matrix.cuda-version }}
         run: |
@@ -99,9 +89,9 @@ jobs:
             $subpackages = @(${{ join(matrix.cuda-components, ', ') }}) | Foreach-Object {"${_}_${{ matrix.cuda-version }}"}
             Start-Process -FilePath .\install.exe -ArgumentList (@("-s") + $subpackages) -NoNewWindow -Wait
           }
-
           $cudaPath = (Resolve-Path "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\*").path
           echo "$cudaPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - if: startsWith(matrix.preset, 'ROCm')
         name: Install ROCm ${{ matrix.rocm-version }}
         run: |
@@ -110,7 +100,6 @@ jobs:
             Invoke-WebRequest -Uri "${{ matrix.install }}" -OutFile "install.exe"
             Start-Process -FilePath .\install.exe -ArgumentList '-install' -NoNewWindow -Wait
           }
-
           $hipPath = (Resolve-Path "C:\Program Files\AMD\ROCm\*").path
           echo "$hipPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           echo "CC=$hipPath\bin\clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -118,6 +107,7 @@ jobs:
           echo "HIPCXX=$hipPath\bin\clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "HIP_PLATFORM=amd" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "CMAKE_PREFIX_PATH=$hipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - if: matrix.preset == 'Vulkan'
         name: Install Vulkan
         run: |
@@ -126,14 +116,15 @@ jobs:
             Invoke-WebRequest -Uri "${{ matrix.install }}" -OutFile "install.exe"
             Start-Process -FilePath .\install.exe -ArgumentList "-c","--am","--al","in" -NoNewWindow -Wait
           }
-
           $vulkanPath = (Resolve-Path "C:\VulkanSDK\*").path
           echo "$vulkanPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           echo "VULKAN_SDK=$vulkanPath" >> $env:GITHUB_ENV
+
       - if: matrix.preset == 'CPU'
         run: |
           echo "CC=clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "CXX=clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - if: ${{ !cancelled() && steps.cache-install.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
@@ -142,81 +133,55 @@ jobs:
             C:\Program Files\AMD\ROCm
             C:\VulkanSDK
           key: ${{ matrix.install }}
+
       - uses: actions/checkout@v4
+
       - uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}\.ccache
-          key: ccache-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.preset }}-${{ needs.setup-environment.outputs.vendorsha }}
+          key: ccache-windows-amd64-${{ matrix.preset }}-${{ needs.setup-environment.outputs.vendorsha }}
+
       - name: Build target "${{ matrix.preset }}"
         run: |
           Import-Module 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
           Enter-VsDevShell -VsInstallPath 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise' -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -no_logo'
-          cmake --preset "${{ matrix.preset }}" ${{ matrix.flags }} --install-prefix "$((pwd).Path)\dist\${{ matrix.os }}-${{ matrix.arch }}"
+          cmake --preset "${{ matrix.preset }}" ${{ matrix.flags }} --install-prefix "$((pwd).Path)\dist\windows-amd64"
           cmake --build --parallel ([Environment]::ProcessorCount) --preset "${{ matrix.preset }}"
-          cmake --install build --component "${{ startsWith(matrix.preset, 'CUDA ') && 'CUDA' || startsWith(matrix.preset, 'ROCm ') && 'HIP' || startsWith(matrix.preset, 'Vulkan') && 'Vulkan' || 'CPU' }}" --strip
+          cmake --install build --component "${{ startsWith(matrix.preset, 'CUDA ') && 'CUDA' || startsWith(matrix.preset, 'ROCm ') && 'HIP' || (matrix.preset == 'Vulkan') && 'Vulkan' || 'CPU' }}" --strip
           Remove-Item -Path dist\lib\ollama\rocm\rocblas\library\*gfx906* -ErrorAction SilentlyContinue
         env:
           CMAKE_GENERATOR: Ninja
-      - name: Log build results
-        run: |
-          gci -path .\dist -Recurse -File | ForEach-Object { get-filehash -path $_.FullName -Algorithm SHA256 } | format-list
+
       - uses: actions/upload-artifact@v4
         with:
-          name: depends-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.preset }}
+          name: depends-windows-amd64-${{ matrix.preset }}
           path: dist\*
 
   windows-build:
     needs: [setup-environment]
-    strategy:
-      matrix:
-        os: [windows]
-        arch: [amd64, arm64]
-        include:
-          - os: windows
-            arch: amd64
-            llvmarch: x86_64
-          - os: windows
-            arch: arm64
-            llvmarch: aarch64
     runs-on: windows-2022
     environment: release
     env:
       GOFLAGS: ${{ needs.setup-environment.outputs.GOFLAGS }}
       VERSION: ${{ needs.setup-environment.outputs.VERSION }}
     steps:
-      - name: Install ARM64 system dependencies
-        if: matrix.arch == 'arm64'
+      - name: Install llvm-mingw (x64 host)
         run: |
           $ErrorActionPreference = "Stop"
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          echo "C:\ProgramData\chocolatey\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-          Invoke-WebRequest -Uri https://aka.ms/vs/17/release/vc_redist.arm64.exe -OutFile "${{ runner.temp }}\vc_redist.arm64.exe"
-          Start-Process -FilePath "${{ runner.temp }}\vc_redist.arm64.exe" -ArgumentList @("/install", "/quiet", "/norestart") -NoNewWindow -Wait
-
-          choco install -y --no-progress git gzip
-          echo "C:\Program Files\Git\cmd" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Install clang and gcc-compat
-        run: |
-          $ErrorActionPreference = "Stop"
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          Invoke-WebRequest -Uri "https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-${{ matrix.llvmarch }}.zip" -OutFile "${{ runner.temp }}\llvm-mingw-ucrt.zip"
-          Expand-Archive -Path ${{ runner.temp }}\llvm-mingw-ucrt.zip -DestinationPath "C:\Program Files\"
+          Invoke-WebRequest -Uri "https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-x86_64.zip" -OutFile "${{ runner.temp }}\llvm-mingw-ucrt.zip"
+          Expand-Archive -Path "${{ runner.temp }}\llvm-mingw-ucrt.zip" -DestinationPath "C:\Program Files\"
           $installPath = (Resolve-Path -Path "C:\Program Files\llvm-mingw-*-ucrt*").path
-          echo "$installPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-          # Ensure "gcc" resolves to clang
-          $clang   = Join-Path $installPath "bin\clang.exe"
-          $clangxx = Join-Path $installPath "bin\clang++.exe"
-          $gcc     = Join-Path $installPath "bin\gcc.exe"
-          $gpp     = Join-Path $installPath "bin\g++.exe"
-          if (-not (Test-Path $gcc)) { Copy-Item $clang   $gcc -Force }
-          if (-not (Test-Path $gpp)) { Copy-Item $clangxx $gpp -Force }
+          # Put it FIRST on PATH for this job
+          echo "$installPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $env:PATH = "$installPath\bin;$env:PATH"
+
+          # Ensure `gcc` resolves to clang (not MSYS2/Strawberry)
+          if (-not (Test-Path "$installPath\bin\gcc.exe")) { Copy-Item "$installPath\bin\clang.exe" "$installPath\bin\gcc.exe" -Force }
+          if (-not (Test-Path "$installPath\bin\g++.exe")) { Copy-Item "$installPath\bin\clang++.exe" "$installPath\bin\g++.exe" -Force }
 
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -224,34 +189,22 @@ jobs:
             go.sum
             Makefile.sync
 
-      - name: Verify gcc is actually clang
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          where.exe gcc
-          $version = cmd /c "gcc --version 2>&1"
-          $version = $version -join "`n"
-          Write-Host "gcc --version:`n$version"
-          if ($version -notmatch 'clang') {
-            Write-Host "ERROR: GCC must be clang for proper utf16 handling"
-            exit 1
-          }
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - run: |
-          ./scripts/build_windows ollama app
-
-      - name: Log build results
+      - name: Build Windows app (amd64)
+        shell: pwsh
         run: |
-          gci -path .\dist -Recurse -File | ForEach-Object { get-filehash -path $_.FullName -Algorithm SHA256 } | format-list
+          $ErrorActionPreference = "Stop"
+          where.exe gcc
+          cmd /c "gcc --version"
+          ./scripts/build_windows ollama app
 
       - uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.os }}-${{ matrix.arch }}
+          name: build-windows-amd64
           path: dist\*
 
   windows-app:
@@ -264,12 +217,14 @@ jobs:
       KEY_CONTAINER: ${{ vars.KEY_CONTAINER }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: google-github-actions/auth@v2
         with:
           project_id: ollama
           credentials_json: ${{ secrets.GOOGLE_SIGNING_CREDENTIALS }}
 
-      - run: |
+      - name: Install signing tools + cert
+        run: |
           $ErrorActionPreference = "Stop"
           Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=323507" -OutFile "${{ runner.temp }}\sdksetup.exe"
           Start-Process "${{ runner.temp }}\sdksetup.exe" -ArgumentList @("/q") -NoNewWindow -Wait
@@ -289,26 +244,17 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: depends-windows*
+          pattern: depends-windows-amd64-*
           path: dist
           merge-multiple: true
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: build-windows*
+          name: build-windows-amd64
           path: dist
-          merge-multiple: true
-
-      - name: Log dist contents after download
-        run: |
-          gci -path .\dist -recurse
 
       - run: |
           ./scripts/build_windows.ps1 deps sign installer zip
-
-      - name: Log contents after build
-        run: |
-          gci -path .\dist -Recurse -File | ForEach-Object { get-filehash -path $_.FullName -Algorithm SHA256 } | format-list
 
       - uses: actions/upload-artifact@v4
         with:
@@ -333,10 +279,6 @@ jobs:
           name: bundles-windows
           path: dist
 
-      - name: Log dist contents
-        run: |
-          ls -l dist/
-
       - name: Generate checksum file
         run: |
           find . -type f -not -name 'sha256sum.txt' -print0 | xargs -0 sha256sum | tee sha256sum.txt
@@ -345,13 +287,10 @@ jobs:
       - name: Create or update Release for tag
         run: |
           RELEASE_VERSION="$(echo ${GITHUB_REF_NAME} | cut -f1 -d-)"
-          echo "Looking for existing release for ${RELEASE_VERSION}"
           OLD_TAG=$(gh release ls --json name,tagName | jq -r ".[] | select(.name == \"${RELEASE_VERSION}\") | .tagName")
           if [ -n "$OLD_TAG" ]; then
-            echo "Updating release ${RELEASE_VERSION} to point to new tag ${GITHUB_REF_NAME}"
             gh release edit ${OLD_TAG} --tag ${GITHUB_REF_NAME}
           else
-            echo "Creating new release ${RELEASE_VERSION} pointing to tag ${GITHUB_REF_NAME}"
             gh release create ${GITHUB_REF_NAME} \
               --title ${RELEASE_VERSION} \
               --draft \
@@ -363,6 +302,5 @@ jobs:
         run: |
           shopt -s nullglob
           for payload in dist/*.zip dist/*.exe dist/sha256sum.txt; do
-            echo "Uploading $payload"
             gh release upload ${GITHUB_REF_NAME} "$payload" --clobber
           done
